@@ -52,6 +52,12 @@ function limited(req) {
 const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
   
+  // Health check endpoint - must be first to bypass rate limiting/CORS
+  if (req.url === '/health' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));
+  }
+  
   if (req.method === "OPTIONS") {
     if (!allowedOrigin(req)) { 
       res.writeHead(403, { "Content-Type": "application/json" }); 
