@@ -7,7 +7,8 @@ const apiKey = process.env.BACKEND_API_KEY;
 const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || "").split(",").map((v) => v.trim()).filter(Boolean));
 const port = Number(process.env.PORT || 10000);
 const windowMs = 60_000;
-const maxRequests = Number(process.env.RATE_LIMIT_PER_MINUTE || 120);
+const rawLimit = process.env.RATE_LIMIT_PER_MINUTE;
+const maxRequests = rawLimit !== undefined ? Number(rawLimit) : 120;
 const counters = new Map();
 
 if (!target || !apiKey || allowedOrigins.size === 0) {
@@ -39,6 +40,7 @@ function allowedOrigin(req) {
 }
 
 function limited(req) {
+  if (maxRequests <= 0) return false;
   const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").toString().split(",")[0];
   const now = Date.now();
   const entry = counters.get(ip);
