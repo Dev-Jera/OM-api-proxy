@@ -20,7 +20,12 @@ proxy.on("proxyReq", (proxyReq) => {
   proxyReq.setHeader("X-API-KEY", apiKey);
 });
 proxy.on("error", (err, req, res) => {
+  const origin = req.headers.origin;
   if (res && !res.headersSent) res.writeHead(502, { "Content-Type": "application/json" });
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   if (res) res.end(JSON.stringify({ 
     error: "Bad Gateway",
     message: "Unable to reach the backend service. Please try again later."
@@ -46,13 +51,17 @@ const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
   
   if (req.method === "OPTIONS") {
-if (!allowedOrigin(req)) { 
-    res.writeHead(403, { "Content-Type": "application/json" }); 
-    return res.end(JSON.stringify({ 
-      error: "Forbidden",
-      message: "This origin is not allowed to access the API."
-    })); 
-  }
+    if (!allowedOrigin(req)) { 
+      res.writeHead(403, { "Content-Type": "application/json" }); 
+      if (origin) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+      }
+      return res.end(JSON.stringify({ 
+        error: "Forbidden",
+        message: "This origin is not allowed to access the API."
+      })); 
+    }
     const headers = {
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Accept, Authorization, Content-Type, X-API-KEY",
@@ -66,6 +75,10 @@ if (!allowedOrigin(req)) {
   
   if (!allowedOrigin(req)) { 
     res.writeHead(403, { "Content-Type": "application/json" }); 
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
     return res.end(JSON.stringify({ 
       error: "Forbidden",
       message: "This origin is not allowed to access the API."
@@ -76,6 +89,10 @@ if (!allowedOrigin(req)) {
       "retry-after": "60",
       "Content-Type": "application/json"
     }); 
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
     return res.end(JSON.stringify({ 
       error: "Too Many Requests",
       message: "You've made too many requests. Please wait a moment and try again.",
