@@ -40,8 +40,26 @@ function limited(req) {
 }
 
 const server = http.createServer((req, res) => {
+  const origin = req.headers.origin;
+  
+  if (req.method === "OPTIONS") {
+    if (!allowedOrigin(req)) { res.writeHead(403); return res.end("Origin not allowed"); }
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Accept, Authorization, Content-Type, X-API-KEY",
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Max-Age": "86400",
+    });
+    return res.end();
+  }
+  
   if (!allowedOrigin(req)) { res.writeHead(403); return res.end("Origin not allowed"); }
   if (limited(req)) { res.writeHead(429, { "retry-after": "60" }); return res.end("Too many requests"); }
+  
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  
   req.headers["x-api-key"] = apiKey;
   req.headers["authorization"] = req.headers.authorization || "";
   proxy.web(req, res, { target, ignorePath: false });
