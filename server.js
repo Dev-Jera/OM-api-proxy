@@ -20,8 +20,11 @@ proxy.on("proxyReq", (proxyReq) => {
   proxyReq.setHeader("X-API-KEY", apiKey);
 });
 proxy.on("error", (err, req, res) => {
-  if (res && !res.headersSent) res.writeHead(502, { "content-type": "application/json" });
-  if (res) res.end(JSON.stringify({ detail: "Upstream API unavailable" }));
+  if (res && !res.headersSent) res.writeHead(502, { "Content-Type": "application/json" });
+  if (res) res.end(JSON.stringify({ 
+    error: "Bad Gateway",
+    message: "Unable to reach the backend service. Please try again later."
+  }));
   console.error("proxy error", err.message);
 });
 
@@ -43,7 +46,13 @@ const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
   
   if (req.method === "OPTIONS") {
-    if (!allowedOrigin(req)) { res.writeHead(403); return res.end("Origin not allowed"); }
+if (!allowedOrigin(req)) { 
+    res.writeHead(403, { "Content-Type": "application/json" }); 
+    return res.end(JSON.stringify({ 
+      error: "Forbidden",
+      message: "This origin is not allowed to access the API."
+    })); 
+  }
     const headers = {
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Accept, Authorization, Content-Type, X-API-KEY",
@@ -55,8 +64,24 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
   
-  if (!allowedOrigin(req)) { res.writeHead(403); return res.end("Origin not allowed"); }
-  if (limited(req)) { res.writeHead(429, { "retry-after": "60" }); return res.end("Too many requests"); }
+  if (!allowedOrigin(req)) { 
+    res.writeHead(403, { "Content-Type": "application/json" }); 
+    return res.end(JSON.stringify({ 
+      error: "Forbidden",
+      message: "This origin is not allowed to access the API."
+    })); 
+  }
+  if (limited(req)) { 
+    res.writeHead(429, { 
+      "retry-after": "60",
+      "Content-Type": "application/json"
+    }); 
+    return res.end(JSON.stringify({ 
+      error: "Too Many Requests",
+      message: "You've made too many requests. Please wait a moment and try again.",
+      retryAfter: 60
+    })); 
+  }
   
   if (origin) {
     res.setHeader("Access-Control-Allow-Origin", origin);
