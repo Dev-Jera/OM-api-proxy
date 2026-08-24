@@ -10,6 +10,7 @@ const windowMs = 60_000;
 const rawLimit = process.env.RATE_LIMIT_PER_MINUTE;
 const maxRequests = rawLimit !== undefined ? Number(rawLimit) : 120;
 const counters = new Map();
+const zohoWebhookSecret = process.env.ZOHO_WEBHOOK_SECRET || "";
 
 if (!target || !apiKey || allowedOrigins.size === 0) {
   throw new Error("BACKEND_URL, BACKEND_API_KEY, and ALLOWED_ORIGINS are required");
@@ -39,6 +40,17 @@ function allowedOrigin(req) {
   return !origin || allowedOrigins.has(origin);
 }
 
+function isValidZohoRequest(req) {
+  if (!zohoWebhookSecret) return false;
+  // Check header first
+  const headerSecret = req.headers["x-zoho-webhook-secret"];
+  if (headerSecret && headerSecret === zohoWebhookSecret) return true;
+  // Check query parameter for Zoho Plug compatibility
+  const url = new URL(req.url, `http://localhost:${port}`);
+  const querySecret = url.searchParams.get("secret");
+  return querySecret && querySecret === zohoWebhookSecret;
+}
+
 function limited(req) {
   if (maxRequests <= 0) return false;
   const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").toString().split(",")[0];
@@ -51,6 +63,9 @@ function limited(req) {
 
 const server = http.createServer((req, res) => {
   const origin = req.headers.origin;
+  const isZohoRequest = isValidZohoRequest(req);
+  const isZohoPath = req.url && req.url.startsWith("/api/v1/escalate/");
+  const isAllowedOrigin = !origin || allowedOrigins.has(origin);
   
   // Health check endpoint - must be first to bypass rate limiting/CORS
   if (req.url === '/health' && req.method === 'GET') {
@@ -59,20 +74,16 @@ const server = http.createServer((req, res) => {
   }
   
   if (req.method === "OPTIONS") {
-    if (!allowedOrigin(req)) { 
-      res.writeHead(403, { "Content-Type": "application/json" }); 
-      if (origin) {
-        res.setHeader("Access-Control-Allow-Origin", origin);
-        res.setHeader("Access-Control-Allow-Credentials", "true");
-      }
+    if (!allowedOrigin(req) && !isValidZohoRequest(req)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ 
         error: "Forbidden",
         message: "This origin is not allowed to access the API."
-      })); 
+      }));
     }
     const headers = {
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Accept, Authorization, Content-Type, X-API-KEY",
+      "Access-Control-Allow-Headers": "Accept, Authorization, Content-Type, X-API-KEY, X-Zoho-Webhook-Secret",
       "Access-Control-Allow-Credentials": "true",
       "Access-Control-Max-Age": "86400",
     };
@@ -81,7 +92,7 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
   
-  if (!allowedOrigin(req)) { 
+  if (!allowedOrigin(req) && !isValidZohoRequest(req)) { 
     res.writeHead(403, { "Content-Type": "application/json" }); 
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
@@ -92,15 +103,13 @@ const server = http.createServer((req, res) => {
       message: "This origin is not allowed to access the API."
     })); 
   }
-  if (limited(req)) { 
+  
+  // Skip rate limiting for Zoho webhook paths (server-to-server)
+  if (!isZohoPath && limited(req)) { 
     res.writeHead(429, { 
       "retry-after": "60",
       "Content-Type": "application/json"
     }); 
-    if (origin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
     return res.end(JSON.stringify({ 
       error: "Too Many Requests",
       message: "You've made too many requests. Please wait a moment and try again.",
@@ -119,7 +128,10 @@ const server = http.createServer((req, res) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
-  if (!allowedOrigin(req) || limited(req)) return socket.destroy();
+  const isZohoRequest = isValidZohoRequest(req);
+  const isAllowedOrigin = allowedOrigin(req);
+  
+  if (!isAllowedOrigin && !isZohoRequest) return socket.destroy();
   req.headers["x-api-key"] = apiKey;
   const url = new URL(req.url, "http://proxy.local");
   const accessToken = url.searchParams.get("access_token");
